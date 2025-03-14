@@ -1,0 +1,18 @@
+{
+  "name": "gpu-proxy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/gpu-proxy.js",
+    "crawl-docs": "node src/crawl-vast-docs.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "puppeteer": "^24.4.0"
+  }
+}
