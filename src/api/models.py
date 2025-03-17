@@ -10,7 +10,8 @@ class ErrorResponse(BaseModel):
 
 class InstanceCreate(BaseModel):
     """Model for creating a new instance."""
-    image: str = Field(..., description="Docker image to use")
+    id: int = Field(..., description="Offer ID to create instance from")
+    image: Optional[str] = Field(None, description="Docker image to use")
     onstart: Optional[str] = Field(None, description="Command to run on instance start")
     disk: Optional[Union[int, str]] = Field(None, description="Disk space in GB")
     price: Optional[Union[float, str]] = Field(None, description="Bid price in $/hour")
@@ -20,7 +21,12 @@ class InstanceCreate(BaseModel):
     jupyter_dir: Optional[str] = Field(None, description="Directory to start Jupyter in")
     jupyter_lab: Optional[bool] = Field(None, description="Whether to start JupyterLab")
     python_version: Optional[str] = Field(None, description="Python version to use")
+    docker_args: Optional[str] = Field(None, description="Docker arguments")
+    docker_cmd: Optional[str] = Field(None, description="Docker command")
+    docker_image: Optional[str] = Field(None, description="Docker image")
+    runtype: Optional[str] = Field(None, description="Run type (e.g., 'jupyter', 'ssh')")
     extra: Optional[Dict[str, Any]] = Field(None, description="Additional options")
+    docker_env: Optional[Dict[str, Any]] = None
 
 class InstanceBidChange(BaseModel):
     """Model for changing the bid price of an instance."""
