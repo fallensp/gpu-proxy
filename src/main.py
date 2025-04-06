@@ -9,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from src.api.routes import router
+from src.api.routes.schedules import router as schedule_router
+from src.core.scheduler import scheduler
+from src.core.template_manager import get_template_manager
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +21,9 @@ logging_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, logging_level),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(router, prefix="/api/v1")
+app.include_router(schedule_router, prefix="/api/v1/schedules")
 
 # Custom OpenAPI schema
 def custom_openapi():
@@ -70,6 +77,34 @@ async def root():
         "documentation": "/docs",
         "api_prefix": "/api/v1"
     }
+
+# Startup and shutdown events
+@app.on_event("startup")
+async def startup_event():
+    """
+    Run startup tasks.
+    """
+    # Start the scheduler
+    logger.info("Starting scheduler")
+    scheduler.start()
+    
+    # Create default templates
+    logger.info("Creating default templates")
+    template_manager = get_template_manager()
+    created_templates = await template_manager.create_default_templates()
+    if created_templates:
+        logger.info(f"Created {len(created_templates)} default templates")
+    else:
+        logger.info("No new default templates created")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Run shutdown tasks.
+    """
+    # Shut down the scheduler
+    logger.info("Shutting down scheduler")
+    scheduler.shutdown()
 
 if __name__ == "__main__":
     import uvicorn

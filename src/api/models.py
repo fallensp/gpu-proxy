@@ -102,4 +102,35 @@ class SearchOffersParams(BaseModel):
     disable_bundling: Optional[bool] = Field(False, description="Show identical offers")
     storage: Optional[float] = Field(5.0, description="Amount of storage to use for pricing, in GiB")
     order: Optional[str] = Field("score-", description="Comma-separated list of fields to sort on")
-    no_default: Optional[bool] = Field(False, description="Disable default query") 
+    no_default: Optional[bool] = Field(False, description="Disable default query")
+
+class InstanceTemplateCreate(BaseModel):
+    """Model for creating an instance template."""
+    name: str = Field(..., description="Name of the template")
+    description: Optional[str] = Field(None, description="Description of what the template is for")
+    image: str = Field(..., description="Docker image to use for the instance")
+    env_params: Optional[str] = Field(None, description="Environment parameters for the Docker container")
+    onstart_cmd: Optional[str] = Field(None, description="Command to run when the instance starts")
+    disk_size: Optional[int] = Field(50, description="Disk size in GB")
+    use_ssh: Optional[bool] = Field(True, description="Whether to enable SSH access")
+    use_direct: Optional[bool] = Field(True, description="Whether to use direct connection")
+    other_params: Optional[Dict[str, Any]] = Field(None, description="Additional parameters")
+    template_type: Optional[str] = Field("user", description="Type of template (user, system, etc.)")
+    tags: Optional[List[str]] = Field(None, description="Tags for categorizing templates")
+    is_public: Optional[bool] = Field(False, description="Whether the template is public")
+
+class InstanceTemplateUpdate(BaseModel):
+    """Model for updating an instance template."""
+    name: Optional[str] = Field(None, description="Name of the template")
+    description: Optional[str] = Field(None, description="Description of what the template is for")
+    image: Optional[str] = Field(None, description="Docker image to use for the instance")
+    env_params: Optional[str] = Field(None, description="Environment parameters for the Docker container")
+    onstart_cmd: Optional[str] = Field(None, description="Command to run when the instance starts")
+    disk_size: Optional[int] = Field(None, description="Disk size in GB")
+    use_ssh: Optional[bool] = Field(None, description="Whether to enable SSH access")
+    use_direct: Optional[bool] = Field(None, description="Whether to use direct connection")
+    other_params: Optional[Dict[str, Any]] = Field(None, description="Additional parameters")
+    template_type: Optional[str] = Field(None, description="Type of template (user, system, etc.)")
+    tags: Optional[List[str]] = Field(None, description="Tags for categorizing templates")
+    is_public: Optional[bool] = Field(None, description="Whether the template is public")
+    is_featured: Optional[bool] = Field(None, description="Whether the template is featured") 

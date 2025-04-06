@@ -11,12 +11,15 @@ from datetime import datetime
 from pydantic import BaseModel
 import json
 import time
+import traceback
+import uuid
 
 from src.core.vast_client import VastClient
 from src.core.instance_manager import get_instance_manager, InstanceManager
 from src.core.scheduler import get_scheduler, JobScheduler
 from src.core.db import get_supabase_client, log_api_call
 from src.core.template_manager import get_template_manager, TemplateManager
+from src.core.schedule_manager import get_schedule_manager, ScheduleManager
 from src.api.models import (
     ErrorResponse, 
     InstanceCreate, 
@@ -29,6 +32,7 @@ from src.api.models import (
     InstanceTemplateCreate,
     InstanceTemplateUpdate
 )
+from ...utils.vast_utils import VastUtils, VastInstance
 
 # Models for scheduling
 class ScheduleInstanceCreate(BaseModel):
@@ -126,7 +130,8 @@ async def create_instance(
     instance: InstanceCreate,
     client: VastClient = Depends(get_vast_client),
     instance_manager: InstanceManager = Depends(get_instance_manager),
-    supabase_client = Depends(get_supabase_client)
+    supabase_client = Depends(get_supabase_client),
+    schedule_manager = Depends(get_schedule_manager)
 ):
     """
     Create a new GPU instance.
@@ -142,6 +147,7 @@ async def create_instance(
     error_message = None
     vast_id = None
     instance_db_id = None
+    schedule_id = None
     
     try:
         # Convert the instance model to a dictionary, excluding None values
@@ -151,6 +157,20 @@ async def create_instance(
         if instance.extra:
             instance_dict.update(instance.extra)
             del instance_dict["extra"]
+        
+        # Check if schedule creation is requested
+        create_schedule = instance_dict.get("create_schedule", False)
+        schedule_data = instance_dict.get("schedule", {})
+        
+        # Log scheduling information for debugging
+        logger.info(f"[SCHEDULE_DEBUG] create_schedule flag: {create_schedule}")
+        logger.info(f"[SCHEDULE_DEBUG] schedule_data: {json.dumps(schedule_data, default=str)}")
+        
+        # Remove schedule data from instance params before sending to Vast.ai
+        if "create_schedule" in instance_dict:
+            del instance_dict["create_schedule"]
+        if "schedule" in instance_dict:
+            del instance_dict["schedule"]
         
         # Create the instance on Vast.ai
         vast_response = client.create_instance(**instance_dict)
@@ -182,6 +202,87 @@ async def create_instance(
                 instance_db_id = db_result["id"]
             
             logger.info(f"Stored instance {vast_id} in database")
+            
+            # Create schedule if requested
+            if create_schedule and schedule_data:
+                logger.info(f"[SCHEDULE_DEBUG] Preparing to create schedule for instance {vast_id}")
+                try:
+                    # Prepare schedule data
+                    gpu_type = "Custom"  # Default value
+                    if vast_response.get("machine", {}).get("gpu_name"):
+                        gpu_type = vast_response["machine"]["gpu_name"]
+                    
+                    # Make sure we have all required fields
+                    if not schedule_data.get("start_schedule"):
+                        logger.error("[SCHEDULE_DEBUG] Missing required field: start_schedule")
+                        vast_response["schedule_error"] = "Missing required schedule field: start_schedule"
+                        return vast_response
+                        
+                    if not schedule_data.get("stop_schedule"):
+                        logger.error("[SCHEDULE_DEBUG] Missing required field: stop_schedule")
+                        vast_response["schedule_error"] = "Missing required schedule field: stop_schedule"
+                        return vast_response
+                        
+                    # Create the pod_schedule with all required fields
+                    pod_schedule = {
+                        "id": str(uuid.uuid4()),  # Generate a UUID for the schedule
+                        "name": instance.label or f"Schedule for pod {vast_id}",
+                        "gpu_type": gpu_type,
+                        "min_specs": {},  # Could extract from the offer
+                        "num_gpus": instance_dict.get("num_gpus", 1),
+                        "disk_size": instance.disk,
+                        "docker_image": instance.image,
+                        "use_ssh": True if instance_dict.get("docker_args") and "22:22" in instance_dict.get("docker_args") else False,
+                        "start_schedule": schedule_data.get("start_schedule"),
+                        "stop_schedule": schedule_data.get("stop_schedule"),
+                        "timezone": schedule_data.get("timezone", "UTC"),
+                        "last_instance_id": str(vast_id),
+                        "is_active": True,
+                        # Set user_id to NULL to avoid foreign key constraint violation
+                        "user_id": None
+                    }
+                    
+                    # Convert any dict/list fields to proper JSON strings for logging
+                    log_schedule = pod_schedule.copy()
+                    for key, value in log_schedule.items():
+                        if isinstance(value, (dict, list)):
+                            log_schedule[key] = json.dumps(value)
+                    
+                    # Log the full schedule data
+                    logger.info(f"[SCHEDULE_DEBUG] Final pod_schedule to be created: {json.dumps(log_schedule, default=str)}")
+                    
+                    # Create the schedule
+                    logger.info(f"[SCHEDULE_DEBUG] Calling schedule_manager.create_schedule")
+                    schedule_result = await schedule_manager.create_schedule(pod_schedule)
+                    
+                    if schedule_result and "error" in schedule_result and schedule_result.get("needs_table_creation"):
+                        # Special case: Table needs to be created
+                        logger.error("[SCHEDULE_DEBUG] Cannot create schedule: pod_schedules table does not exist")
+                        logger.error("[SCHEDULE_DEBUG] Please create the table using the SQL in the logs")
+                        # Add this info to the response so the frontend can show a useful message
+                        vast_response["schedule_error"] = "Database table not ready. Please contact support to set up the scheduling system."
+                    elif schedule_result and "id" in schedule_result:
+                        schedule_id = schedule_result["id"]
+                        logger.info(f"[SCHEDULE_DEBUG] Successfully created schedule {schedule_id} for instance {vast_id}")
+                        
+                        # Add schedule info to response
+                        vast_response["schedule"] = {
+                            "id": schedule_id,
+                            "start_schedule": schedule_data.get("start_schedule"),
+                            "stop_schedule": schedule_data.get("stop_schedule")
+                        }
+                    else:
+                        logger.warning(f"[SCHEDULE_DEBUG] Schedule created but no ID returned for instance {vast_id}")
+                        if schedule_result:
+                            logger.warning(f"[SCHEDULE_DEBUG] Schedule result: {json.dumps(schedule_result, default=str)}")
+                        else:
+                            logger.warning("[SCHEDULE_DEBUG] Schedule result is None")
+                except Exception as schedule_error:
+                    logger.error(f"[SCHEDULE_DEBUG] Failed to create schedule for instance {vast_id}: {str(schedule_error)}")
+                    logger.error(f"[SCHEDULE_DEBUG] Exception traceback: {traceback.format_exc()}")
+                    # Continue with instance creation even if schedule creation fails
+            else:
+                logger.info(f"[SCHEDULE_DEBUG] No schedule will be created: create_schedule={create_schedule}, has_schedule_data={bool(schedule_data)}")
         except Exception as db_error:
             # Log the error but don't fail the request
             logger.error(f"Failed to store instance in database: {str(db_error)}")
@@ -1183,7 +1284,6 @@ async def get_instance_api_logs(
         # Check if this is a Vast.ai ID or internal instance ID
         is_uuid = False
         try:
-            import uuid
             uuid.UUID(instance_id)
             is_uuid = True
         except ValueError:
