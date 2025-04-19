@@ -238,8 +238,8 @@ async def create_instance(
                         "timezone": schedule_data.get("timezone", "UTC"),
                         "last_instance_id": str(vast_id),
                         "is_active": True,
-                        # Set user_id to NULL to avoid foreign key constraint violation
-                        "user_id": None
+                        # Use a default system user ID instead of null
+                        "user_id": "e554e24e-91b9-4db6-ae43-f1d468fc40cf"  # Valid user ID
                     }
                     
                     # Convert any dict/list fields to proper JSON strings for logging

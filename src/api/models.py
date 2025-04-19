@@ -25,6 +25,8 @@ class InstanceCreate(BaseModel):
     docker_cmd: Optional[str] = Field(None, description="Docker command")
     docker_image: Optional[str] = Field(None, description="Docker image")
     runtype: Optional[str] = Field(None, description="Run type (e.g., 'jupyter', 'ssh')")
+    create_schedule: Optional[bool] = Field(None, description="Whether to create a schedule for this instance")
+    schedule: Optional[Dict[str, Any]] = Field(None, description="Schedule data for automatic start/stop")
     extra: Optional[Dict[str, Any]] = Field(None, description="Additional options")
     docker_env: Optional[Dict[str, Any]] = None
 
